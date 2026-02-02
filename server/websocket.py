@@ -188,6 +188,8 @@ async def _handle_client_message(
                 engine.set_crane_luffing_speed(crane_id, message["luffing_speed"])
             if "slew_angle" in message:
                 engine.set_crane_slew_angle(crane_id, message["slew_angle"])
+            if "luffing_angle" in message:
+                engine.set_crane_luffing_angle(crane_id, message["luffing_angle"])
 
         await websocket.send_text(json.dumps({"ack": True, "type": "control"}))
 

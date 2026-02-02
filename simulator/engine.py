@@ -173,6 +173,23 @@ class SimulationEngine:
         crane.slew_angle = angle % 360.0
         return True
 
+    def set_crane_luffing_angle(self, crane_id: str, angle: float) -> bool:
+        """
+        크레인의 기복각을 직접 설정합니다.
+
+        Args:
+            crane_id: 크레인 ID
+            angle: 기복각 (도, 0~80)
+
+        Returns:
+            성공 여부
+        """
+        crane = self.collision_engine.get_crane(crane_id)
+        if crane is None:
+            return False
+        crane.luffing_angle = max(0.0, min(80.0, angle))
+        return True
+
     def set_on_update(self, callback: Callable) -> None:
         """
         데이터가 갱신될 때마다 호출될 콜백 함수를 등록합니다.
