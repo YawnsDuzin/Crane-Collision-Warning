@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>크레인 충돌 예측 시스템</title>
+
+    <!--
+    ============================================================
+    메인 관제 화면 (index.html)
+    ============================================================
+
+    이 파일은 관제실 모니터에 표시되는 메인 화면입니다.
+
+    [화면 구성]
+    ┌────────────────────────────────────────────────────┐
+    │  헤더: 시스템 이름, 현재 시각                         │
+    ├────────────────────────────────────────────────────┤
+    │  ┌──────────────────────┐ ┌────────────────────┐   │
+    │  │                      │ │  상태 요약 패널     │   │
+    │  │   3D 시각화 영역     │ │  - 크레인 수       │   │
+    │  │   (Three.js)         │ │  - 등급별 현황     │   │
+    │  │                      │ ├────────────────────┤   │
+    │  │                      │ │  크레인 제어 패널   │   │
+    │  │                      │ │  - 속도 조절       │   │
+    │  └──────────────────────┘ │  - 시나리오 선택   │   │
+    │                           └────────────────────┘   │
+    ├────────────────────────────────────────────────────┤
+    │  하단: 충돌 정보 테이블, 경고 메시지 목록            │
+    └────────────────────────────────────────────────────┘
+    -->
+
+    <!-- Three.js 3D 라이브러리 (CDN에서 로드) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <!-- OrbitControls - 마우스로 3D 뷰를 회전/확대할 수 있게 해주는 플러그인 -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <!-- CSS 스타일 -->
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <!-- ============================================================ -->
+    <!-- 헤더 영역 -->
+    <!-- ============================================================ -->
+    <header id="header">
+        <div class="header-left">
+            <h1>크레인 충돌 예측 시스템</h1>
+            <span class="subtitle">Crane Collision Warning System</span>
+        </div>
+        <div class="header-right">
+            <span id="current-time">--:--:--</span>
+            <span id="connection-status" class="status-disconnected">연결 끊김</span>
+        </div>
+    </header>
+
+    <!-- ============================================================ -->
+    <!-- 메인 콘텐츠 영역 -->
+    <!-- ============================================================ -->
+    <main id="main-content">
+        <!-- 좌측: 3D 시각화 -->
+        <div id="view-3d-container">
+            <div id="three-canvas-wrapper">
+                <!-- Three.js가 여기에 3D 캔버스를 삽입합니다 -->
+            </div>
+            <div id="view-controls">
+                <button onclick="resetCamera()" title="카메라 위치 초기화">초기화</button>
+                <button onclick="toggleTopView()" title="위에서 내려다보기">평면도</button>
+                <button onclick="toggleSideView()" title="옆에서 보기">측면도</button>
+            </div>
+        </div>
+
+        <!-- 우측: 정보 패널 -->
+        <div id="info-panel">
+            <!-- 상태 요약 -->
+            <section id="status-summary" class="panel">
+                <h2>현장 상태</h2>
+                <div id="status-grid">
+                    <div class="status-item">
+                        <span class="status-label">총 크레인</span>
+                        <span id="total-cranes" class="status-value">0</span>
+                    </div>
+                    <div class="status-item status-normal">
+                        <span class="status-label">정상</span>
+                        <span id="count-normal" class="status-value">0</span>
+                    </div>
+                    <div class="status-item status-caution">
+                        <span class="status-label">주의</span>
+                        <span id="count-caution" class="status-value">0</span>
+                    </div>
+                    <div class="status-item status-warning">
+                        <span class="status-label">경고</span>
+                        <span id="count-warning" class="status-value">0</span>
+                    </div>
+                    <div class="status-item status-danger">
+                        <span class="status-label">위험</span>
+                        <span id="count-danger" class="status-value">0</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 크레인 제어 패널 -->
+            <section id="crane-control" class="panel">
+                <h2>크레인 제어</h2>
+                <div id="crane-selector">
+                    <label for="select-crane">크레인 선택:</label>
+                    <select id="select-crane" onchange="onCraneSelected()">
+                        <option value="">-- 선택 --</option>
+                    </select>
+                </div>
+
+                <div id="crane-detail" style="display:none;">
+                    <div class="control-group">
+                        <label>선회각: <span id="current-slew">0</span>도</label>
+                        <input type="range" id="slew-angle-slider" min="0" max="360" value="0"
+                               oninput="onSlewAngleChange(this.value)">
+                    </div>
+                    <div class="control-group">
+                        <label>선회 속도: <span id="current-slew-speed">0</span>도/초</label>
+                        <input type="range" id="slew-speed-slider" min="-2" max="2" step="0.1" value="0"
+                               oninput="onSlewSpeedChange(this.value)">
+                    </div>
+                    <div class="control-group">
+                        <label>기복각: <span id="current-luffing">0</span>도</label>
+                        <input type="range" id="luffing-angle-slider" min="0" max="80" value="10"
+                               oninput="onLuffingAngleChange(this.value)">
+                    </div>
+                    <div class="crane-info">
+                        <div>위치: (<span id="info-base-x">0</span>, <span id="info-base-y">0</span>)</div>
+                        <div>마스트 높이: <span id="info-mast-height">0</span>m</div>
+                        <div>붐대 길이: <span id="info-boom-length">0</span>m</div>
+                        <div>작업 반경: <span id="info-working-radius">0</span>m</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 시나리오 선택 -->
+            <section id="scenario-panel" class="panel">
+                <h2>시나리오</h2>
+                <div id="scenario-list">
+                    <!-- JavaScript에서 동적으로 생성 -->
+                </div>
+                <div class="sim-controls">
+                    <button id="btn-stop-all" onclick="stopAllCranes()">전체 정지</button>
+                    <div class="speed-control">
+                        <label>속도: <span id="sim-speed-label">1.0</span>x</label>
+                        <input type="range" id="sim-speed-slider" min="0.1" max="5" step="0.1" value="1"
+                               oninput="onSimSpeedChange(this.value)">
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- ============================================================ -->
+    <!-- 하단: 충돌 정보 & 경고 -->
+    <!-- ============================================================ -->
+    <footer id="footer">
+        <!-- 충돌 검사 결과 테이블 -->
+        <section id="collision-table-section">
+            <h3>크레인 간 거리</h3>
+            <table id="collision-table">
+                <thead>
+                    <tr>
+                        <th>크레인 쌍</th>
+                        <th>현재 거리</th>
+                        <th>붐대 끝점 거리</th>
+                        <th>예상 충돌</th>
+                        <th>등급</th>
+                    </tr>
+                </thead>
+                <tbody id="collision-tbody">
+                    <!-- JavaScript에서 동적으로 업데이트 -->
+                </tbody>
+            </table>
+        </section>
+
+        <!-- 경고 메시지 영역 -->
+        <section id="alert-section">
+            <h3>경고 메시지</h3>
+            <div id="alert-messages">
+                <div class="no-alerts">경고 없음 - 모든 크레인 안전</div>
+            </div>
+        </section>
+
+        <!-- 이벤트 로그 -->
+        <section id="event-log-section">
+            <h3>이벤트 이력</h3>
+            <div id="event-log">
+                <!-- JavaScript에서 동적으로 업데이트 -->
+            </div>
+        </section>
+    </footer>
+
+    <!-- ============================================================ -->
+    <!-- JavaScript 파일 로드 -->
+    <!-- ============================================================ -->
+    <script src="/static/js/three-scene.js"></script>
+    <script src="/static/js/websocket-client.js"></script>
+    <script src="/static/js/main.js"></script>
+</body>
+</html>
